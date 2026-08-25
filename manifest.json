@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.gabrielvincent.switcharoo",
+  "name": "Switcharoo",
+  "version": "1.0.0",
+  "author": "Gabriel Vincent",
+  "license": "MIT",
+  "description": "A native Omarchy window switcher with MRU ordering and Vim-style grid navigation",
+  "kinds": [
+    "overlay"
+  ],
+  "keepLoaded": true,
+  "entryPoints": {
+    "overlay": "Switcher.qml"
+  }
+}
