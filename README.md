@@ -8,43 +8,16 @@ A native [Omarchy](https://omarchy.org/) shell plugin for switching between Hypr
 
 - Most-recently-used window ordering from Hyprland's `focusHistoryID`
 - Vim navigation (`h`, `j`, `k`, `l`) and arrow-key navigation
-- True grid navigation with wrapping
-- Configurable maximum items per row
+- Grid navigation with wrapping
 - Close the selected client with `q`, `Delete`, or middle-click
-- Focus with `Enter`, `Space`, or click
-- `Tab` / `Shift+Tab` forward and backward navigation
-- Optional Alt-Tab behavior: focus the selected client when Alt is released
+- Switch between windows or workspaces
 - Current-monitor, current-workspace, and same-class filters
-- App icons resolved from desktop entries, `StartupWMClass`, window titles, and themed icon names
-- Shipped Hyprland bindings (a single `dofile`), with missing-binding detection
 - Omarchy theme colors, spacing, fonts, and corner radius
-- Hot reload through the Omarchy plugin host
-
-The plugin only needs `hyprctl`, which is already part of Omarchy. It does not need the old Rust daemon, GTK, systemd unit, or Hyprland binary plugin.
 
 ## Install
 
 ```bash
 omarchy plugin add https://github.com/gabrielvincent/omarchy-switcharoo.git --enable
-```
-
-For local development, clone or copy the repository into:
-
-```text
-~/.config/omarchy/plugins/io.github.gabrielvincent.switcharoo/
-```
-
-Then validate and rescan it:
-
-```bash
-omarchy plugin validate ~/.config/omarchy/plugins/io.github.gabrielvincent.switcharoo
-omarchy-shell shell rescanPlugins
-```
-
-Open it directly with:
-
-```bash
-omarchy-shell shell summon io.github.gabrielvincent.switcharoo '{}'
 ```
 
 ## Bind Alt+Tab
@@ -81,13 +54,6 @@ The bindings map `ALT + TAB` to the plugin's `omarchy-switcharoo:next` global sh
 
 If the plugin starts without finding the `"Switcharoo switcher"` binding, it shows a notification (clicking it opens this README).
 
-Hyprland auto-reloads the file. Validate it after saving:
-
-```bash
-hyprctl reload
-hyprctl configerrors
-```
-
 The shortcuts should appear in `hyprctl globalshortcuts`, and the `ALT + TAB` entries should appear in `hyprctl binds`.
 
 ## Remove
@@ -101,17 +67,9 @@ The plugin manager does not remove custom Hyprland configuration. Before removin
    rm ~/.config/hypr/bindings/switcharoo.lua
    ```
 
-3. Reload and validate Hyprland:
+3. Disable and remove the plugin:
 
    ```bash
-   hyprctl reload
-   hyprctl configerrors
-   ```
-
-4. Disable and remove the plugin:
-
-   ```bash
-   omarchy plugin disable io.github.gabrielvincent.switcharoo
    omarchy plugin remove io.github.gabrielvincent.switcharoo --yes
    ```
 
