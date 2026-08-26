@@ -826,11 +826,17 @@ Item {
                 }
               }
 
-              // Client mode: icon, title, and class/workspace subtitle.
+              // Client mode: centered icon and title.
               Column {
                 visible: !windowCard.workspaceMode
-                anchors.fill: parent
-                anchors.margins: Style.spacing.md
+                anchors {
+                  left: parent.left
+                  right: parent.right
+                  verticalCenter: parent.verticalCenter
+                  leftMargin: Style.spacing.md
+                  rightMargin: Style.spacing.md
+                }
+                height: implicitHeight
                 spacing: Style.spacing.sm
 
                 Image {
