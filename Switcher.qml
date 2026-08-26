@@ -36,6 +36,7 @@ Item {
   property int queuedMoveDelta: 0
   property int selectedIndex: 0
   property var runtimeConfig: WindowModel.normalizedConfig({}, {})
+  property int lastKnownCardWidth: 0
   property string errorMessage: ""
 
   readonly property int windowCount: windowModel.count
@@ -57,7 +58,11 @@ Item {
   readonly property int visibleRows: Math.min(rows, runtimeConfig.maxVisibleRows)
   readonly property int gridWidth: columns * cellWidth
   readonly property int gridHeight: visibleRows * cellHeight
-  readonly property int cardWidth: Math.min(panel.width - Style.gapsOut * 4, Math.max(root.footerMinimumWidth, gridWidth + contentPadding * 2 + surfaceBorderWidth * 2))
+  readonly property int calculatedCardWidth: Math.min(panel.width - Style.gapsOut * 4, Math.max(root.footerMinimumWidth, gridWidth + contentPadding * 2 + surfaceBorderWidth * 2))
+  // Keep the previous card width during the asynchronous initial snapshot so
+  // clearing the model does not make the card briefly collapse and grow again.
+  readonly property int cardWidth: root.loading && root.lastKnownCardWidth > 0
+    ? root.lastKnownCardWidth : root.calculatedCardWidth
   readonly property int cardHeight: Math.min(panel.height - Style.gapsOut * 4, headerHeight + gridHeight + footerHeight + contentPadding * 2 + surfaceBorderWidth * 2)
 
   function pluginId() {
@@ -111,6 +116,11 @@ Item {
     root.runtimeConfig = nextConfig
     root.opened = true
     root.loading = true
+    // Never expose the model from the previous invocation while the new
+    // compositor snapshot is being collected.  In particular, workspace
+    // previews can otherwise appear briefly in their old order and then jump
+    // when applySnapshot() replaces them.
+    windowModel.clear()
     root.errorMessage = ""
     root.showingMinimized = false
     root.queuedMoveDelta = 0
@@ -721,6 +731,11 @@ Item {
     }) + "\n")
   }
 
+  onLoadingChanged: {
+    if (!root.loading)
+      root.lastKnownCardWidth = root.calculatedCardWidth
+  }
+
   Component.onCompleted: ensureMinimizedStateDir.running = true
 
   Process {
@@ -1029,6 +1044,11 @@ Item {
 
           GridView {
             id: grid
+            // The initial snapshot is asynchronous.  Keeping the previous
+            // model visible here makes the cards appear to reorder on open.
+            // Refreshes after loading do not set loading, so normal live
+            // updates remain visible without causing a flash.
+            visible: !root.loading
             anchors.centerIn: parent
             width: Math.min(parent.width, root.gridWidth)
             height: parent.height
