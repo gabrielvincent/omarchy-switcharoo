@@ -858,19 +858,6 @@ Item {
                   maximumLineCount: 1
                 }
 
-                Text {
-                  width: parent.width
-                  text: windowCard.windowClass
-                    + (root.runtimeConfig.showWorkspace && windowCard.workspaceName ? "  ·  " + windowCard.workspaceName : "")
-                  textFormat: Text.PlainText
-                  color: Color.menu.text
-                  opacity: 0.55
-                  font.family: Style.font.menuFamily
-                  font.pixelSize: Style.font.caption
-                  horizontalAlignment: Text.AlignHCenter
-                  elide: Text.ElideRight
-                  maximumLineCount: 1
-                }
               }
 
               MouseArea {
