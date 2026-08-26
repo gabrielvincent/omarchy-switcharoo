@@ -39,6 +39,8 @@ TestCase {
     compare(config.killKey, "x")
     compare(config.direction, "previous")
     verify(config.commitOnModifierRelease)
+    compare(config.excludeWorkspaces.length, 1)
+    compare(config.excludeWorkspaces[0], "special:.*")
 
     var defaults = WindowModel.normalizedConfig({}, {})
     verify(defaults.commitOnModifierRelease)
@@ -51,6 +53,7 @@ TestCase {
 
     compare(WindowModel.normalizedConfig({ switchMode: "workspace" }, {}).switchMode, "workspaces")
     compare(WindowModel.normalizedConfig({}, {}).switchMode, "clients")
+    compare(WindowModel.normalizedConfig({ excludeWorkspaces: ["scratchpad"] }, {}).excludeWorkspaces[0], "scratchpad")
 
     compare(WindowModel.normalizedConfig({}, {}).dimBackdrop, false)
     compare(WindowModel.normalizedConfig({ dimBackdrop: true }, {}).dimBackdrop, true)
@@ -143,6 +146,30 @@ TestCase {
     compare(all[1].id, 4)
     compare(all[2].id, 1)
     compare(all[3].id, 3)
+  }
+
+  function test_excludedWorkspaces() {
+    var config = WindowModel.normalizedConfig({
+      excludeWorkspaces: ["special:.*", "scratchpad"]
+    }, {})
+    var clients = [
+      { address: "0x1", mapped: true, workspace: { id: 1, name: "1" }, focusHistoryID: 0 },
+      { address: "0x2", mapped: true, workspace: { id: -98, name: "special:scratchpad" }, focusHistoryID: 1 },
+      { address: "0x3", mapped: true, workspace: { id: 9, name: "scratchpad" }, focusHistoryID: 2 }
+    ]
+
+    var filteredClients = WindowModel.filteredClients(clients, config)
+    compare(filteredClients.length, 1)
+    compare(filteredClients[0].address, "0x1")
+
+    var workspaces = [
+      { id: 1, name: "1", monitorID: 1, windows: 1 },
+      { id: -98, name: "special:scratchpad", monitorID: 1, windows: 1 },
+      { id: 9, name: "scratchpad", monitorID: 1, windows: 1 }
+    ]
+    var filteredWorkspaces = WindowModel.filteredWorkspaces(workspaces, config, 1, clients)
+    compare(filteredWorkspaces.length, 1)
+    compare(filteredWorkspaces[0].id, 1)
   }
 
   function test_emptyWorkspacesExcluded() {

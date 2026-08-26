@@ -87,6 +87,7 @@ Third-party plugin settings live on the plugin entry in `~/.config/omarchy/shell
   "itemsPerRow": 4,
   "maxVisibleRows": 3,
   "filterBy": [],
+  "excludeWorkspaces": ["special:.*", "scratchpad"],
   "killKey": "q",
   "wrapNavigation": true
 }
@@ -100,6 +101,7 @@ Supported settings:
 | `itemsPerRow` | `4` | Maximum cells in each row (1–12). `maxItemsPerRow` is accepted as an alias. |
 | `maxVisibleRows` | `3` | Maximum rows before the grid scrolls. |
 | `filterBy` | `[]` | Any combination of `current_monitor`, `current_workspace`, and `same_class`; use `[]` for all windows. |
+| `excludeWorkspaces` | `["special:.*"]` | Workspace-name regular expressions to exclude. In client mode, clients on matching workspaces are hidden; in workspace mode, matching workspaces are hidden. |
 | `killKey` | `"q"` | One-character key used to close the selected client. |
 | `showWorkspace` | `false` | Show the workspace name below each title in client mode and the workspace number/name label on workspace cards in workspace mode. `showWorkspaceNumbers` is accepted as an alias. |
 | `dimBackdrop` | `false` | Dim the desktop behind the switcher. |
