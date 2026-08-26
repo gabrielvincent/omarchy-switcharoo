@@ -1281,30 +1281,6 @@ Item {
               Layout.alignment: Qt.AlignVCenter
             }
             Text {
-              text: "m  Minimize"
-              color: Color.menu.text
-              opacity: 0.52
-              font.family: Style.font.menuFamily
-              font.pixelSize: Style.font.caption
-              horizontalAlignment: Text.AlignHCenter
-              Layout.fillWidth: true
-              Layout.preferredWidth: 0
-              Layout.minimumWidth: 0
-              Layout.alignment: Qt.AlignVCenter
-            }
-            Text {
-              text: "⇧m  Minimized"
-              color: Color.menu.text
-              opacity: 0.52
-              font.family: Style.font.menuFamily
-              font.pixelSize: Style.font.caption
-              horizontalAlignment: Text.AlignHCenter
-              Layout.fillWidth: true
-              Layout.preferredWidth: 0
-              Layout.minimumWidth: 0
-              Layout.alignment: Qt.AlignVCenter
-            }
-            Text {
               visible: root.showingMinimized
               text: "Esc  Go back"
               color: Color.menu.text
