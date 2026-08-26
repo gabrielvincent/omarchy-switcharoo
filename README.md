@@ -127,6 +127,8 @@ omarchy-shell shell summon io.github.gabrielvincent.switcharoo \
 | `k` / Up | Cell above |
 | Enter / Space | Focus the selected client or workspace |
 | `q` / Delete | Close selected client (client mode only) |
+| `m` | Minimize the selected client or workspace; in minimized view, restore the selected item without leaving the switcher. Clients go to `special:switcharoo_minimized`; workspaces are parked in dedicated Switcharoo special workspaces. |
+| Shift + `m` | Toggle the minimized-only view. Enter / Space restores its selected client or workspace to its original workspace. |
 | Escape | Cancel |
 | Left click | Focus client |
 | Middle click | Close client |

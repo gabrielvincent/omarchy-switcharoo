@@ -123,6 +123,14 @@ function isExcludedWorkspace(workspace, config) {
             ? config.excludeWorkspaces
             : [];
     var name = workspaceName(workspace);
+    var normalizedName = name.toLowerCase();
+    // Switcharoo's parking workspaces are implementation details and should
+    // never leak into the normal client/workspace list. Minimized view uses a
+    // separate path and intentionally bypasses this filter.
+    if (normalizedName === "special:switcharoo_minimized"
+        || normalizedName.indexOf("special:switcharoo_minimized_workspace_") === 0)
+        return true;
+
     for (var i = 0; i < patterns.length; i++) {
         try {
             if (new RegExp(patterns[i]).test(name)) return true;

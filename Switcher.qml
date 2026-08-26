@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Layouts
 import Quickshell
 import Quickshell.Hyprland
 import Quickshell.Io
@@ -22,6 +23,16 @@ Item {
   property bool sawKeyEvent: false
   property bool openedViaShortcut: false
   property bool refreshPending: false
+  // These maps retain the original destination while a window/workspace is
+  // parked in Switcharoo's special workspace.
+  property var minimizedClients: ({})
+  property var minimizedWorkspaces: ({})
+  property bool minimizedStateLoaded: false
+  property bool minimizedStateDirectoryReady: false
+  property bool showingMinimized: false
+  readonly property string minimizedStateDir: (Quickshell.env("XDG_STATE_HOME")
+    || Quickshell.env("HOME") + "/.local/state")
+  readonly property string minimizedStatePath: root.minimizedStateDir + "/switcharoo-minimized.json"
   property int queuedMoveDelta: 0
   property int selectedIndex: 0
   property var runtimeConfig: WindowModel.normalizedConfig({}, {})
@@ -35,6 +46,9 @@ Item {
   readonly property int surfaceBorderWidth: Math.max(1, Style.normalBorderWidth)
   readonly property int headerHeight: Math.max(Style.space(34), Style.font.caption + Style.spacing.controlPaddingY * 2)
   readonly property int footerHeight: Math.max(Style.space(34), Style.font.caption + Style.spacing.controlPaddingY * 2)
+  // Keep the navigation and action captions on one line without overlapping
+  // when the grid contains only one or two items.
+  readonly property int footerMinimumWidth: Style.space(560)
   readonly property int availableGridWidth: Math.max(root.minimumCellWidth, panel.width - Style.gapsOut * 4 - root.contentPadding * 2 - root.surfaceBorderWidth * 2)
   readonly property int widthLimitedColumns: Math.max(1, Math.floor(root.availableGridWidth / root.cellWidth))
   readonly property int columns: Math.max(1, Math.min(runtimeConfig.itemsPerRow, widthLimitedColumns, Math.max(1, windowCount)))
@@ -43,7 +57,7 @@ Item {
   readonly property int visibleRows: Math.min(rows, runtimeConfig.maxVisibleRows)
   readonly property int gridWidth: columns * cellWidth
   readonly property int gridHeight: visibleRows * cellHeight
-  readonly property int cardWidth: Math.min(panel.width - Style.gapsOut * 4, Math.max(Style.space(380), gridWidth + contentPadding * 2 + surfaceBorderWidth * 2))
+  readonly property int cardWidth: Math.min(panel.width - Style.gapsOut * 4, Math.max(root.footerMinimumWidth, gridWidth + contentPadding * 2 + surfaceBorderWidth * 2))
   readonly property int cardHeight: Math.min(panel.height - Style.gapsOut * 4, headerHeight + gridHeight + footerHeight + contentPadding * 2 + surfaceBorderWidth * 2)
 
   function pluginId() {
@@ -98,6 +112,7 @@ Item {
     root.opened = true
     root.loading = true
     root.errorMessage = ""
+    root.showingMinimized = false
     root.queuedMoveDelta = 0
     root.chooseInitialSelection = true
     root.modifierReleasedWhileLoading = commitWasArmed
@@ -114,6 +129,7 @@ Item {
     root.opened = false
     root.loading = false
     root.queuedMoveDelta = 0
+    root.showingMinimized = false
     root.modifierReleasedWhileLoading = false
     root.sawKeyEvent = false
     modifierWatchTimer.stop()
@@ -247,10 +263,48 @@ Item {
           var combined = JSON.parse(String(rawText || "{}"))
           var clientsSnapshot = combined.clients || []
           var monitorsSnapshot = combined.monitors || []
+          root.reconcileMinimizedState(clientsSnapshot)
           var activeWorkspaceId = Hyprland.focusedWorkspace ? Hyprland.focusedWorkspace.id : NaN
-          var workspaceList = WindowModel.filteredWorkspaces(combined.workspaces || [], root.runtimeConfig, activeWorkspaceId, clientsSnapshot)
+          var workspaceList = WindowModel.filteredWorkspaces(combined.workspaces || [], root.runtimeConfig, activeWorkspaceId, clientsSnapshot).filter(function(workspace) {
+            return String(workspace.name || "").indexOf("special:switcharoo_minimized_workspace_") !== 0
+          })
           entries = []
-          for (var w = 0; w < workspaceList.length; w++) {
+          if (root.showingMinimized) {
+            var remainingWorkspaces = ({})
+            var workspaceKeys = Object.keys(root.minimizedWorkspaces)
+            for (var mw = 0; mw < workspaceKeys.length; mw++) {
+              var minimizedWorkspace = root.minimizedWorkspaces[workspaceKeys[mw]]
+              var addresses = minimizedWorkspace.addresses || []
+              var members = clientsSnapshot.filter(function(client) {
+                return client && client.mapped !== false
+                  && String((client.workspace || {}).name || "") === String(minimizedWorkspace.specialTarget || "")
+                  && addresses.indexOf(String(client.address || "")) !== -1
+              })
+              if (members.length === 0) continue
+              remainingWorkspaces[workspaceKeys[mw]] = minimizedWorkspace
+              var parkedWorkspace = members[0].workspace || {}
+              var rawMinimizedLayout = WindowModel.workspaceLayout(clientsSnapshot, monitorsSnapshot, parkedWorkspace.id, members[0].monitor)
+              var minimizedLayout = []
+              for (var ml = 0; ml < rawMinimizedLayout.length; ml++) {
+                var minimizedTile = rawMinimizedLayout[ml]
+                minimizedTile.icon = root.iconFor(minimizedTile.appClass, minimizedTile.pid, minimizedTile.title)
+                minimizedLayout.push(minimizedTile)
+              }
+              entries.push({
+                id: minimizedWorkspace.id,
+                name: minimizedWorkspace.name,
+                windows: members.length,
+                lastwindowtitle: String(members[0].title || ""),
+                monitorID: Number(members[0].monitor || 0),
+                layout: minimizedLayout,
+                minimized: true,
+                clientAddresses: addresses
+              })
+            }
+            root.minimizedWorkspaces = remainingWorkspaces
+            root.scheduleMinimizedStateSave()
+          }
+          for (var w = 0; !root.showingMinimized && w < workspaceList.length; w++) {
             var ws = workspaceList[w]
             var rawLayout = WindowModel.workspaceLayout(clientsSnapshot, monitorsSnapshot, ws.id, ws.monitorID)
             var layout = []
@@ -265,11 +319,35 @@ Item {
               windows: Math.max(0, Number(ws.windows || 0)),
               lastwindowtitle: String(ws.lastwindowtitle || ""),
               monitorID: Number(ws.monitorID || 0),
-              layout: layout
+              layout: layout,
+              minimized: false,
+              clientAddresses: clientsSnapshot.filter(function(client) {
+                return client && client.mapped !== false
+                  && client.workspace && Number(client.workspace.id) === Number(ws.id)
+              }).map(function(client) { return String(client.address || "") })
             })
           }
         } else {
-          entries = WindowModel.filteredClients(JSON.parse(String(rawText || "[]")), root.runtimeConfig)
+          var clientSnapshot = JSON.parse(String(rawText || "[]"))
+          root.reconcileMinimizedState(clientSnapshot)
+          if (root.showingMinimized) {
+            var remainingClients = ({})
+            entries = WindowModel.filteredClients(clientSnapshot, { filterBy: [], excludeWorkspaces: [] }).filter(function(client) {
+              var address = String(client.address || "")
+              var minimizedClient = root.minimizedClients[address]
+              if (!minimizedClient
+                  || String((client.workspace || {}).name || "") !== String(minimizedClient.specialTarget || ""))
+                return false
+              remainingClients[address] = minimizedClient
+              return true
+            })
+            root.minimizedClients = remainingClients
+            root.scheduleMinimizedStateSave()
+          } else {
+            entries = WindowModel.filteredClients(clientSnapshot, root.runtimeConfig).filter(function(client) {
+              return String((client.workspace || {}).name || "") !== "special:switcharoo_minimized"
+            })
+          }
         }
         root.errorMessage = ""
       } catch (error) {
@@ -285,7 +363,7 @@ Item {
         var windows = Math.max(0, Number(entry.windows || 0))
         var workspaceId = Number(entry.id)
         windowModel.append({
-          selectionKey: "workspace:" + workspaceId,
+          selectionKey: (entry.minimized ? "minimized-workspace:" : "workspace:") + workspaceId,
           address: "",
           workspaceId: workspaceId,
           workspaceTarget: workspaceId > 0 ? String(workspaceId) : "name:" + String(entry.name || ""),
@@ -296,7 +374,9 @@ Item {
           monitor: Number(entry.monitorID || 0),
           iconSource: Quickshell.iconPath("preferences-desktop-workspaces", true)
             || Quickshell.iconPath("application-x-executable", true),
-          layoutJson: JSON.stringify(entry.layout || [])
+          layoutJson: JSON.stringify(entry.layout || []),
+          minimized: entry.minimized === true,
+          clientAddressesJson: JSON.stringify(entry.clientAddresses || [])
         })
       } else {
         var workspace = entry.workspace || {}
@@ -304,15 +384,17 @@ Item {
         windowModel.append({
           selectionKey: "client:" + address,
           address: address,
-          workspaceId: 0,
-          workspaceTarget: "",
+          workspaceId: Number(workspace.id || 0),
+          workspaceTarget: Number(workspace.id) > 0 ? String(workspace.id) : "name:" + String(workspace.name || ""),
           title: String(entry.title || entry.class || "Untitled window"),
           specialWorkspace: false,
           windowClass: String(entry.class || entry.initialClass || "Application"),
           workspaceName: String(workspace.name || workspace.id || ""),
           monitor: Number(entry.monitor || 0),
           iconSource: root.iconFor(entry.class || entry.initialClass || "", entry.pid, entry.title),
-          layoutJson: "[]"
+          layoutJson: "[]",
+          minimized: root.showingMinimized,
+          clientAddressesJson: "[]"
         })
       }
     }
@@ -392,6 +474,102 @@ Item {
       .replace(/[\r\n]/g, " ") + "'"
   }
 
+  function moveClientToWorkspace(address, workspaceTarget) {
+    if (!root.validAddress(address) || !workspaceTarget) return
+    // In Hyprland's Lua dispatcher, follow = false is the equivalent of the
+    // legacy movetoworkspacesilent dispatcher.
+    Quickshell.execDetached([
+      "hyprctl", "eval",
+      "return hl.dispatch(hl.dsp.window.move({ workspace = " + root.luaQuote(workspaceTarget)
+        + ", window = 'address:" + address + "', follow = false }))"
+    ])
+  }
+
+  function minimizeSelected() {
+    if (root.selectedIndex < 0 || root.selectedIndex >= windowModel.count) return
+    var selected = windowModel.get(root.selectedIndex)
+    if (selected.minimized) {
+      if (root.restoreSelected(selected, false)) refreshTimer.restart()
+      return
+    }
+
+    if (root.runtimeConfig.switchMode === "workspaces") {
+      var addresses = []
+      try { addresses = JSON.parse(String(selected.clientAddressesJson || "[]")) } catch (error) { return }
+      addresses = addresses.filter(root.validAddress)
+      if (addresses.length === 0 || selected.specialWorkspace) return
+
+      var key = "workspace:" + String(selected.workspaceId)
+      var specialTarget = "special:switcharoo_minimized_workspace_" + String(selected.workspaceId).replace(/-/g, "n")
+      root.minimizedWorkspaces[key] = {
+        id: Number(selected.workspaceId),
+        name: String(selected.title),
+        target: String(selected.workspaceTarget),
+        addresses: addresses,
+        specialTarget: specialTarget
+      }
+      // Reassign so QML observes the map update.
+      root.minimizedWorkspaces = root.minimizedWorkspaces
+      root.scheduleMinimizedStateSave()
+      for (var i = 0; i < addresses.length; i++)
+        root.moveClientToWorkspace(addresses[i], specialTarget)
+    } else {
+      var address = String(selected.address || "")
+      if (!root.validAddress(address) || !selected.workspaceTarget) return
+      root.minimizedClients[address] = {
+        target: String(selected.workspaceTarget),
+        specialTarget: "special:switcharoo_minimized"
+      }
+      root.minimizedClients = root.minimizedClients
+      root.scheduleMinimizedStateSave()
+      root.moveClientToWorkspace(address, "special:switcharoo_minimized")
+    }
+    refreshTimer.restart()
+  }
+
+  function restoreSelected(selected, focus) {
+    if (root.runtimeConfig.switchMode === "workspaces") {
+      var workspaceKey = "workspace:" + String(selected.workspaceId)
+      var minimizedWorkspace = root.minimizedWorkspaces[workspaceKey]
+      if (!minimizedWorkspace) return false
+      delete root.minimizedWorkspaces[workspaceKey]
+      root.minimizedWorkspaces = root.minimizedWorkspaces
+      root.scheduleMinimizedStateSave()
+      var addresses = minimizedWorkspace.addresses || []
+      for (var i = 0; i < addresses.length; i++)
+        root.moveClientToWorkspace(addresses[i], minimizedWorkspace.target)
+      if (focus !== false) {
+        Quickshell.execDetached([
+          "hyprctl", "eval",
+          "return hl.dispatch(hl.dsp.focus({ workspace = " + root.luaQuote(minimizedWorkspace.target) + " }))"
+        ])
+      }
+      return true
+    }
+
+    var address = String(selected.address || "")
+    var minimizedClient = root.minimizedClients[address]
+    if (!minimizedClient) return false
+    delete root.minimizedClients[address]
+    root.minimizedClients = root.minimizedClients
+    root.scheduleMinimizedStateSave()
+    root.moveClientToWorkspace(address, minimizedClient.target)
+    if (focus !== false) {
+      Quickshell.execDetached([
+        "hyprctl", "eval",
+        "return hl.dispatch(hl.dsp.focus({ window = 'address:" + address + "' }))"
+      ])
+    }
+    return true
+  }
+
+  function toggleMinimized() {
+    root.showingMinimized = !root.showingMinimized
+    root.chooseInitialSelection = true
+    root.loading = true
+    root.requestSnapshot()
+  }
+
   function activateSelected() {
     if (root.selectedIndex < 0 || root.selectedIndex >= windowModel.count) {
       if (!root.loading) root.dismiss()
@@ -399,6 +577,10 @@ Item {
     }
 
     var selected = windowModel.get(root.selectedIndex)
+    if (selected.minimized) {
+      if (root.restoreSelected(selected)) root.dismiss()
+      return
+    }
     if (root.runtimeConfig.switchMode === "workspaces") {
       var workspaceTarget = String(selected.workspaceTarget || "")
       if (!workspaceTarget) {
@@ -472,7 +654,115 @@ Item {
     return 'hl.is_key_down("Alt_L") or hl.is_key_down("Alt_R")'
   }
 
+  function loadMinimizedState(raw) {
+    if (root.minimizedStateLoaded) return
+    try {
+      var state = JSON.parse(String(raw || "{}"))
+      root.minimizedClients = state && typeof state.clients === "object" ? state.clients : ({})
+      root.minimizedWorkspaces = state && typeof state.workspaces === "object" ? state.workspaces : ({})
+    } catch (error) {
+      console.warn("Switcharoo: invalid minimized state:", error)
+      root.minimizedClients = ({})
+      root.minimizedWorkspaces = ({})
+    }
+    root.minimizedStateLoaded = true
+  }
+
+  function reconcileMinimizedState(clients) {
+    var present = ({})
+    var source = Array.isArray(clients) ? clients : []
+    for (var i = 0; i < source.length; i++) {
+      var address = String(source[i] && source[i].address || "")
+      if (root.validAddress(address) && source[i].mapped !== false)
+        present[address] = true
+    }
+
+    var changed = false
+    var clientsNext = ({})
+    var clientKeys = Object.keys(root.minimizedClients)
+    for (var c = 0; c < clientKeys.length; c++) {
+      var clientAddress = clientKeys[c]
+      if (present[clientAddress]) clientsNext[clientAddress] = root.minimizedClients[clientAddress]
+      else changed = true
+    }
+
+    var workspacesNext = ({})
+    var workspaceKeys = Object.keys(root.minimizedWorkspaces)
+    for (var w = 0; w < workspaceKeys.length; w++) {
+      var key = workspaceKeys[w]
+      var minimizedWorkspace = root.minimizedWorkspaces[key]
+      var addresses = Array.isArray(minimizedWorkspace.addresses) ? minimizedWorkspace.addresses : []
+      var existingAddresses = addresses.filter(function(address) { return present[String(address)] })
+      if (existingAddresses.length === 0) {
+        changed = true
+        continue
+      }
+      if (existingAddresses.length !== addresses.length) changed = true
+      var copy = JSON.parse(JSON.stringify(minimizedWorkspace))
+      copy.addresses = existingAddresses
+      workspacesNext[key] = copy
+    }
+
+    if (!changed) return
+    root.minimizedClients = clientsNext
+    root.minimizedWorkspaces = workspacesNext
+    root.scheduleMinimizedStateSave()
+  }
+
+  function scheduleMinimizedStateSave() {
+    if (root.minimizedStateDirectoryReady) minimizedStateSaveTimer.restart()
+  }
+
+  function saveMinimizedState() {
+    minimizedStateFile.setText(JSON.stringify({
+      version: 1,
+      clients: root.minimizedClients,
+      workspaces: root.minimizedWorkspaces
+    }) + "\n")
+  }
+
+  Component.onCompleted: ensureMinimizedStateDir.running = true
+
+  Process {
+    id: ensureMinimizedStateDir
+    command: ["mkdir", "-p", root.minimizedStateDir]
+    onExited: {
+      root.minimizedStateDirectoryReady = true
+      // Keep the initial read behind mkdir. Otherwise a missing file can be
+      // reported before the directory exists, and a quick minimize can try
+      // to write into that missing directory.
+      minimizedStateFile.reload()
+      // A missing file may have completed its implicit load before mkdir.
+      // Schedule after the explicit reload so first-run state is persisted.
+      root.scheduleMinimizedStateSave()
+    }
+  }
+
   ListModel { id: windowModel }
+
+  FileView {
+    id: minimizedStateFile
+    path: root.minimizedStatePath
+    watchChanges: false
+    atomicWrites: true
+    printErrors: false
+    onLoaded: root.loadMinimizedState(text())
+    onLoadFailed: {
+      root.loadMinimizedState("")
+      // Persist an empty state on first run as well. This both initializes the
+      // file and makes the persistence location observable before the first
+      // minimize action.
+      root.scheduleMinimizedStateSave()
+    }
+    onSaveFailed: console.warn("Switcharoo: failed to save minimized state", error)
+  }
+
+  Timer {
+    id: minimizedStateSaveTimer
+    interval: 100
+    repeat: false
+    onTriggered: root.saveMinimizedState()
+  }
 
   FileView {
     id: cmdlineView
@@ -657,7 +947,12 @@ Item {
             || (event.key === Qt.Key_Tab && (event.modifiers & Qt.ShiftModifier))
 
           if (event.key === Qt.Key_Escape) {
-            root.dismiss()
+            if (root.showingMinimized) root.toggleMinimized()
+            else root.dismiss()
+          } else if ((event.modifiers & Qt.ShiftModifier) && text === "m") {
+            root.toggleMinimized()
+          } else if (text === "m") {
+            root.minimizeSelected()
           } else if (event.key === Qt.Key_Delete || text === root.runtimeConfig.killKey) {
             root.closeSelected()
           } else if (event.key === Qt.Key_Left || text === "h" || backwardsTab) {
@@ -696,6 +991,23 @@ Item {
         Item {
           width: parent.width
           height: root.headerHeight
+
+          Text {
+            visible: root.showingMinimized
+            anchors.left: parent.left
+            anchors.verticalCenter: parent.verticalCenter
+            text: "←"
+            color: Color.menu.text
+            opacity: 0.72
+            font.family: Style.font.menuFamily
+            font.pixelSize: Style.font.body
+
+            MouseArea {
+              anchors.fill: parent
+              cursorShape: Qt.PointingHandCursor
+              onClicked: root.toggleMinimized()
+            }
+          }
 
           Text {
             anchors.right: parent.right
@@ -950,25 +1262,74 @@ Item {
           width: parent.width
           height: root.footerHeight
 
-          Text {
-            anchors.left: parent.left
-            anchors.verticalCenter: parent.verticalCenter
-            text: "h/j/k/l or 🞀/🞃/🞁/🞂  Navigate"
-            color: Color.menu.text
-            opacity: 0.52
-            font.family: Style.font.menuFamily
-            font.pixelSize: Style.font.caption
-          }
+          // Equal-width cells and bullet separators keep each hint distinct
+          // while distributing them across the footer.
+          RowLayout {
+            anchors.fill: parent
+            spacing: Style.spacing.sm
 
-          Text {
-            anchors.right: parent.right
-            anchors.verticalCenter: parent.verticalCenter
-            visible: root.runtimeConfig.switchMode !== "workspaces"
-            text: root.runtimeConfig.killKey.toUpperCase() + " / Del  Close"
-            color: Color.menu.text
-            opacity: 0.52
-            font.family: Style.font.menuFamily
-            font.pixelSize: Style.font.caption
+            Text {
+              text: "h/j/k/l or 🞀/🞃/🞁/🞂  Navigate"
+              color: Color.menu.text
+              opacity: 0.52
+              font.family: Style.font.menuFamily
+              font.pixelSize: Style.font.caption
+              horizontalAlignment: Text.AlignLeft
+              Layout.fillWidth: true
+              Layout.preferredWidth: 0
+              Layout.minimumWidth: 0
+              Layout.alignment: Qt.AlignVCenter
+            }
+            Text {
+              text: "m  Minimize"
+              color: Color.menu.text
+              opacity: 0.52
+              font.family: Style.font.menuFamily
+              font.pixelSize: Style.font.caption
+              horizontalAlignment: Text.AlignHCenter
+              Layout.fillWidth: true
+              Layout.preferredWidth: 0
+              Layout.minimumWidth: 0
+              Layout.alignment: Qt.AlignVCenter
+            }
+            Text {
+              text: "⇧m  Minimized"
+              color: Color.menu.text
+              opacity: 0.52
+              font.family: Style.font.menuFamily
+              font.pixelSize: Style.font.caption
+              horizontalAlignment: Text.AlignHCenter
+              Layout.fillWidth: true
+              Layout.preferredWidth: 0
+              Layout.minimumWidth: 0
+              Layout.alignment: Qt.AlignVCenter
+            }
+            Text {
+              visible: root.showingMinimized
+              text: "Esc  Go back"
+              color: Color.menu.text
+              opacity: 0.52
+              font.family: Style.font.menuFamily
+              font.pixelSize: Style.font.caption
+              horizontalAlignment: Text.AlignRight
+              Layout.fillWidth: true
+              Layout.preferredWidth: 0
+              Layout.minimumWidth: 0
+              Layout.alignment: Qt.AlignVCenter
+            }
+            Text {
+              visible: !root.showingMinimized && root.runtimeConfig.switchMode !== "workspaces"
+              text: root.runtimeConfig.killKey.toUpperCase() + " / Del  Close"
+              color: Color.menu.text
+              opacity: 0.52
+              font.family: Style.font.menuFamily
+              font.pixelSize: Style.font.caption
+              horizontalAlignment: Text.AlignRight
+              Layout.fillWidth: true
+              Layout.preferredWidth: 0
+              Layout.minimumWidth: 0
+              Layout.alignment: Qt.AlignVCenter
+            }
           }
         }
       }
