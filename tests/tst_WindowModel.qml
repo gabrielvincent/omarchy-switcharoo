@@ -39,13 +39,13 @@ TestCase {
     compare(config.killKey, "x")
     compare(config.direction, "previous")
     verify(config.commitOnModifierRelease)
-    compare(config.excludeWorkspaces.length, 1)
-    compare(config.excludeWorkspaces[0], "special:.*")
+    compare(config.excludeWorkspaces.length, 0)
 
     var defaults = WindowModel.normalizedConfig({}, {})
     verify(defaults.commitOnModifierRelease)
     compare(defaults.switchMode, "clients")
     compare(defaults.showWorkspace, false)
+    verify(defaults.showSpecialWorkspaceBadge)
     compare(defaults.dimBackdrop, false)
     compare(defaults.itemsPerRow, 4)
     compare(defaults.maxVisibleRows, 3)
@@ -60,6 +60,8 @@ TestCase {
     compare(WindowModel.normalizedConfig({}, {}).showWorkspace, false)
     compare(WindowModel.normalizedConfig({ showWorkspace: false }, {}).showWorkspace, false)
     compare(WindowModel.normalizedConfig({ showWorkspaceNumbers: false }, {}).showWorkspace, false)
+    verify(WindowModel.normalizedConfig({ showSpecialWorkspaceBadge: true }, {}).showSpecialWorkspaceBadge)
+    verify(!WindowModel.normalizedConfig({ showSpecialWorkspaceBadge: false }, {}).showSpecialWorkspaceBadge)
   }
 
   function test_terminalCommandParsing() {
@@ -68,6 +70,13 @@ TestCase {
     compare(WindowModel.terminalCommandFromExec("xdg-terminal-exec -e /usr/bin/lazysql"), "lazysql")
     compare(WindowModel.terminalCommandFromCmdline("foot\x00--app-id=TUI.tile\x00-e\x00k9s\x00"), "k9s")
     compare(WindowModel.terminalCommandFromCmdline("foot\x00--app-id=TUI.tile\x00"), "")
+  }
+
+  function test_specialWorkspaceDetection() {
+    verify(WindowModel.isSpecialWorkspace({ id: -98, name: "special:scratchpad" }))
+    verify(WindowModel.isSpecialWorkspace({ id: 3, name: "special:magic" }))
+    verify(WindowModel.isSpecialWorkspace({ id: -1, name: "scratchpad" }))
+    verify(!WindowModel.isSpecialWorkspace({ id: 3, name: "3" }))
   }
 
   function test_workspaceLayout() {

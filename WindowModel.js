@@ -86,6 +86,8 @@ function normalizedConfig(entry, payload) {
             ) === true,
         showWorkspace:
             pick("showWorkspace", "showWorkspaceNumbers", false) !== false,
+        showSpecialWorkspaceBadge:
+            pick("showSpecialWorkspaceBadge", "show_special_workspace_badge", true) !== false,
         dimBackdrop: pick("dimBackdrop", "dim_backdrop", false) === true,
         wrapNavigation: pick("wrapNavigation", "wrap", true) !== false,
     };
@@ -106,6 +108,13 @@ function workspaceName(workspace) {
     if (!workspace || typeof workspace !== "object") return "";
     var name = String(workspace.name || "");
     return name || String(workspace.id || "");
+}
+
+function isSpecialWorkspace(workspace) {
+    if (!workspace || typeof workspace !== "object") return false;
+
+    var name = String(workspace.name || "").toLowerCase();
+    return name.indexOf("special:") === 0 || Number(workspace.id) < 0;
 }
 
 function isExcludedWorkspace(workspace, config) {

@@ -290,6 +290,7 @@ Item {
           workspaceId: workspaceId,
           workspaceTarget: workspaceId > 0 ? String(workspaceId) : "name:" + String(entry.name || ""),
           title: String(entry.name || workspaceId),
+          specialWorkspace: WindowModel.isSpecialWorkspace(entry),
           windowClass: windows + (windows === 1 ? " window" : " windows"),
           workspaceName: String(entry.lastwindowtitle || ""),
           monitor: Number(entry.monitorID || 0),
@@ -306,6 +307,7 @@ Item {
           workspaceId: 0,
           workspaceTarget: "",
           title: String(entry.title || entry.class || "Untitled window"),
+          specialWorkspace: false,
           windowClass: String(entry.class || entry.initialClass || "Application"),
           workspaceName: String(workspace.name || workspace.id || ""),
           monitor: Number(entry.monitor || 0),
@@ -746,6 +748,7 @@ Item {
               required property string title
               required property string windowClass
               required property string workspaceName
+              required property bool specialWorkspace
               required property string iconSource
               required property string layoutJson
 
@@ -823,6 +826,34 @@ Item {
                   horizontalAlignment: Text.AlignHCenter
                   elide: Text.ElideRight
                   maximumLineCount: 1
+                }
+              }
+
+              Rectangle {
+                id: specialBadge
+                visible: windowCard.workspaceMode
+                  && windowCard.specialWorkspace
+                  && root.runtimeConfig.showSpecialWorkspaceBadge
+                anchors {
+                  top: parent.top
+                  right: parent.right
+                  topMargin: Style.spacing.sm
+                  rightMargin: Style.spacing.sm
+                }
+                width: specialBadgeLabel.implicitWidth + Style.spacing.sm * 2
+                height: specialBadgeLabel.implicitHeight + Style.space(4)
+                radius: height / 2
+                color: Color.accent
+                z: 2
+
+                Text {
+                  id: specialBadgeLabel
+                  anchors.centerIn: parent
+                  text: "special"
+                  color: Color.menu.background
+                  font.family: Style.font.menuFamily
+                  font.pixelSize: Style.font.caption
+                  font.bold: true
                 }
               }
 

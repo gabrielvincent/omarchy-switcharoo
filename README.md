@@ -83,11 +83,12 @@ Third-party plugin settings live on the plugin entry in `~/.config/omarchy/shell
   "commitOnModifierRelease": true,
   "switchMode": "clients",
   "showWorkspace": false,
+  "showSpecialWorkspaceBadge": true,
   "dimBackdrop": false,
   "itemsPerRow": 4,
   "maxVisibleRows": 3,
   "filterBy": [],
-  "excludeWorkspaces": ["special:.*", "scratchpad"],
+  "excludeWorkspaces": [],
   "killKey": "q",
   "wrapNavigation": true
 }
@@ -97,13 +98,14 @@ Supported settings:
 
 | Setting | Default | Description |
 |---|---:|---|
-| `switchMode` | `"clients"` | Switch `clients` or `workspaces`. Workspace mode lists non-special workspaces and activates the selection, previewing each workspace's tiled client layout. |
+| `switchMode` | `"clients"` | Switch `clients` or `workspaces`. Workspace mode lists workspaces and activates the selection, previewing each workspace's tiled client layout. Special workspaces are marked with a `special` badge when enabled. |
 | `itemsPerRow` | `4` | Maximum cells in each row (1–12). `maxItemsPerRow` is accepted as an alias. |
 | `maxVisibleRows` | `3` | Maximum rows before the grid scrolls. |
 | `filterBy` | `[]` | Any combination of `current_monitor`, `current_workspace`, and `same_class`; use `[]` for all windows. |
-| `excludeWorkspaces` | `["special:.*"]` | Workspace-name regular expressions to exclude. In client mode, clients on matching workspaces are hidden; in workspace mode, matching workspaces are hidden. |
+| `excludeWorkspaces` | `[]` | Workspace-name regular expressions to exclude. In client mode, clients on matching workspaces are hidden; in workspace mode, matching workspaces are hidden. |
 | `killKey` | `"q"` | One-character key used to close the selected client. |
 | `showWorkspace` | `false` | Show the workspace name below each title in client mode and the workspace number/name label on workspace cards in workspace mode. `showWorkspaceNumbers` is accepted as an alias. |
+| `showSpecialWorkspaceBadge` | `true` | Show the `special` badge on special workspace cards in workspace mode. |
 | `dimBackdrop` | `false` | Dim the desktop behind the switcher. |
 | `wrapNavigation` | `true` | Wrap at grid edges. |
 | `commitOnModifierRelease` | `true` | Focus selection when Alt is released. |
