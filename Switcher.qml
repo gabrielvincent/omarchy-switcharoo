@@ -656,12 +656,43 @@ Item {
     root.positionSelection()
   }
 
+  // Release-modifier support (runtimeConfig.releaseModifiers): modifiers
+  // whose release commits the selection. Qt reports the Super key as Key_Meta
+  // on some platforms, so "super" matches both Key_Meta and the explicit
+  // Super keys; "meta" stays separate for platforms that distinguish them.
+  readonly property var _releaseModifierQtKeys: ({
+    'alt': [Qt.Key_Alt],
+    'meta': [Qt.Key_Meta],
+    'super': [Qt.Key_Meta, Qt.Key_Super_L, Qt.Key_Super_R],
+  })
+
+  readonly property var _releaseModifierKeysyms: ({
+    'alt': ["Alt_L", "Alt_R"],
+    'meta': ["Meta_L", "Meta_R"],
+    'super': ["Super_L", "Super_R"],
+  })
+
   function isReleaseModifier(key) {
-    return key === Qt.Key_Alt
+    var names = root.runtimeConfig.releaseModifiers || ["alt"]
+    for (var i = 0; i < names.length; i++) {
+      var keys = root._releaseModifierQtKeys[String(names[i])]
+      if (keys && keys.indexOf(key) !== -1) return true
+    }
+    return false
   }
 
   function modifierKeyExpr() {
-    return 'hl.is_key_down("Alt_L") or hl.is_key_down("Alt_R")'
+    var names = root.runtimeConfig.releaseModifiers || ["alt"]
+    var exprs = []
+    for (var i = 0; i < names.length; i++) {
+      var keysyms = root._releaseModifierKeysyms[String(names[i])]
+      if (!keysyms) continue
+      for (var j = 0; j < keysyms.length; j++)
+        exprs.push('hl.is_key_down("' + keysyms[j] + '")')
+    }
+    if (exprs.length === 0)
+      exprs = ['hl.is_key_down("Alt_L")', 'hl.is_key_down("Alt_R")']
+    return exprs.join(" or ")
   }
 
   function loadMinimizedState(raw) {

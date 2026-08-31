@@ -23,6 +23,22 @@ function normalizeWorkspacePatterns(value) {
     return patterns;
 }
 
+var KNOWN_RELEASE_MODIFIERS = ["alt", "meta", "super"];
+
+function normalizeReleaseModifiers(value) {
+    if (!Array.isArray(value))
+        value = value === undefined || value === null ? [] : [value];
+
+    var modifiers = [];
+    for (var i = 0; i < value.length; i++) {
+        var name = String(value[i] || "").trim().toLowerCase();
+        if (KNOWN_RELEASE_MODIFIERS.indexOf(name) !== -1 &&
+            modifiers.indexOf(name) === -1)
+            modifiers.push(name);
+    }
+    return modifiers.length > 0 ? modifiers : ["alt"];
+}
+
 function normalizedConfig(entry, payload) {
     var stored = entry && typeof entry === "object" ? entry : {};
     var request = payload && typeof payload === "object" ? payload : {};
@@ -84,6 +100,9 @@ function normalizedConfig(entry, payload) {
                 "activateOnModifierRelease",
                 true,
             ) === true,
+        releaseModifiers: normalizeReleaseModifiers(
+            pick("releaseModifiers", "release_modifiers", ["alt"]),
+        ),
         showWorkspace:
             pick("showWorkspace", "showWorkspaceNumbers", false) !== false,
         showSpecialWorkspaceBadge:

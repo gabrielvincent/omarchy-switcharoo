@@ -82,6 +82,7 @@ Third-party plugin settings live on the plugin entry in `~/.config/omarchy/shell
 {
   "id": "io.github.gabrielvincent.switcharoo",
   "commitOnModifierRelease": true,
+  "releaseModifiers": ["alt"],
   "switchMode": "clients",
   "showWorkspace": false,
   "showSpecialWorkspaceBadge": true,
@@ -109,7 +110,8 @@ Supported settings:
 | `showSpecialWorkspaceBadge` | `true` | Show the `special` badge on special workspace cards in workspace mode. |
 | `dimBackdrop` | `false` | Dim the desktop behind the switcher. |
 | `wrapNavigation` | `true` | Wrap at grid edges. |
-| `commitOnModifierRelease` | `true` | Focus selection when Alt is released. |
+| `commitOnModifierRelease` | `true` | Focus the selection when a release modifier is released (see `releaseModifiers`). |
+| `releaseModifiers` | `["alt"]` | Modifier(s) whose release commits the selection: any of `alt`, `meta`, `super`. Accepts a string or array; `release_modifiers` is accepted as an alias. |
 
 A summon payload can temporarily override any setting. For example:
 

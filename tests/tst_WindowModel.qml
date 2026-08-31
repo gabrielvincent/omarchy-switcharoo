@@ -64,6 +64,29 @@ TestCase {
     verify(!WindowModel.normalizedConfig({ showSpecialWorkspaceBadge: false }, {}).showSpecialWorkspaceBadge)
   }
 
+  function test_releaseModifiersConfig() {
+    var defaults = WindowModel.normalizedConfig({}, {})
+    compare(defaults.releaseModifiers.length, 1)
+    compare(defaults.releaseModifiers[0], "alt")
+
+    var alias = WindowModel.normalizedConfig({ release_modifiers: "super" }, {})
+    compare(alias.releaseModifiers.length, 1)
+    compare(alias.releaseModifiers[0], "super")
+
+    var filtered = WindowModel.normalizedConfig({ releaseModifiers: ["ALT", "bogus", "super"] }, {})
+    compare(filtered.releaseModifiers.length, 2)
+    compare(filtered.releaseModifiers[0], "alt")
+    compare(filtered.releaseModifiers[1], "super")
+
+    compare(WindowModel.normalizedConfig({ releaseModifiers: [] }, {}).releaseModifiers[0], "alt")
+    compare(WindowModel.normalizedConfig({ releaseModifiers: ["bogus"] }, {}).releaseModifiers[0], "alt")
+
+    var payload = WindowModel.normalizedConfig({ releaseModifiers: ["alt"] }, { releaseModifiers: ["super", "meta"] })
+    compare(payload.releaseModifiers.length, 2)
+    compare(payload.releaseModifiers[0], "super")
+    compare(payload.releaseModifiers[1], "meta")
+  }
+
   function test_terminalCommandParsing() {
     compare(WindowModel.terminalCommandFromExec("xdg-terminal-exec --app-id=TUI.tile -e lazydocker"), "lazydocker")
     compare(WindowModel.terminalCommandFromExec("omarchy-launch-webapp https://example.com"), "")
