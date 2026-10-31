@@ -30,6 +30,18 @@ Item {
   property bool minimizedStateLoaded: false
   property bool minimizedStateDirectoryReady: false
   property bool showingMinimized: false
+  // Close requests that have not resolved yet, keyed by the selectionKey of
+  // the entry they removed. Apps may refuse to close (for example to ask
+  // about unsaved changes), so each request is watched until its windows exit
+  // or the refusal is handed back to the user.
+  property var pendingKills: ({})
+  readonly property int killRefusalTimeout: 1500
+  // Refused windows that were focused before any dialog showed up. Some apps
+  // take longer than killRefusalTimeout to ask, and their dialog then opens on
+  // whatever workspace is active, so keep watching for it a little longer.
+  property var lateDialogWatches: []
+  readonly property int lateDialogTimeout: 5000
+  property string pendingRevealScript: ""
   readonly property string minimizedStateDir: (Quickshell.env("XDG_STATE_HOME")
     || Quickshell.env("HOME") + "/.local/state")
   readonly property string minimizedStatePath: root.minimizedStateDir + "/switcharoo-minimized.json"
@@ -369,11 +381,19 @@ Item {
     windowModel.clear()
     for (var i = 0; i < entries.length; i++) {
       var entry = entries[i]
+      var selectionKey = workspaceMode
+        ? (entry.minimized ? "minimized-workspace:" : "workspace:") + Number(entry.id)
+        : "client:" + String(entry.address || "")
+      // Windows can take a moment to exit after a close request. Keep their
+      // entry hidden meanwhile instead of letting refreshes bring it back.
+      // Workspace cards stay until Hyprland actually destroys the workspace,
+      // since any of their clients may refuse to close.
+      if (!workspaceMode && root.pendingKills[selectionKey]) continue
       if (workspaceMode) {
         var windows = Math.max(0, Number(entry.windows || 0))
         var workspaceId = Number(entry.id)
         windowModel.append({
-          selectionKey: (entry.minimized ? "minimized-workspace:" : "workspace:") + workspaceId,
+          selectionKey: selectionKey,
           address: "",
           workspaceId: workspaceId,
           workspaceTarget: workspaceId > 0 ? String(workspaceId) : "name:" + String(entry.name || ""),
@@ -392,7 +412,7 @@ Item {
         var workspace = entry.workspace || {}
         var address = String(entry.address || "")
         windowModel.append({
-          selectionKey: "client:" + address,
+          selectionKey: selectionKey,
           address: address,
           workspaceId: Number(workspace.id || 0),
           workspaceTarget: Number(workspace.id) > 0 ? String(workspace.id) : "name:" + String(workspace.name || ""),
@@ -538,7 +558,9 @@ Item {
   }
 
   function restoreSelected(selected, focus) {
-    if (root.runtimeConfig.switchMode === "workspaces") {
+    // Pending kills carry the mode they were made in, since the switcher may
+    // have been reopened in another mode by the time they resolve.
+    if ((selected.mode || root.runtimeConfig.switchMode) === "workspaces") {
       var workspaceKey = "workspace:" + String(selected.workspaceId)
       var minimizedWorkspace = root.minimizedWorkspaces[workspaceKey]
       if (!minimizedWorkspace) return false
@@ -587,6 +609,12 @@ Item {
     }
 
     var selected = windowModel.get(root.selectedIndex)
+    // A workspace that is being closed may vanish at any moment. Don't switch
+    // to it; if a client refuses, revealRefusedWindow() focuses that client.
+    if (root.pendingKills[String(selected.selectionKey)]) {
+      root.dismiss()
+      return
+    }
     if (selected.minimized) {
       if (root.restoreSelected(selected)) root.dismiss()
       return
@@ -641,19 +669,126 @@ Item {
   }
 
   function closeSelected() {
-    if (root.runtimeConfig.switchMode === "workspaces") return
     if (root.selectedIndex < 0 || root.selectedIndex >= windowModel.count) return
-    var address = String(windowModel.get(root.selectedIndex).address || "")
-    if (!root.validAddress(address)) return
+    var selected = windowModel.get(root.selectedIndex)
+    // Asking again could stack a second confirmation dialog.
+    if (root.pendingKills[String(selected.selectionKey)]) return
+    var addresses = []
+    if (root.runtimeConfig.switchMode === "workspaces") {
+      try { addresses = JSON.parse(String(selected.clientAddressesJson || "[]")) } catch (error) { return }
+    } else {
+      addresses = [String(selected.address || "")]
+    }
+    addresses = addresses.filter(root.validAddress)
+    if (addresses.length === 0) return
 
-    Quickshell.execDetached([
-      "hyprctl",
-      "eval",
-      "return hl.dispatch(hl.dsp.window.close({ window = 'address:" + address + "' }))"
-    ])
+    root.pendingKills[String(selected.selectionKey)] = {
+      mode: root.runtimeConfig.switchMode,
+      minimized: selected.minimized === true,
+      workspaceId: Number(selected.workspaceId),
+      address: String(selected.address || ""),
+      addresses: addresses,
+      popups: [],
+      deadline: Date.now() + root.killRefusalTimeout
+    }
+    root.pendingKills = root.pendingKills
+    killCheckTimer.start()
+
+    for (var i = 0; i < addresses.length; i++) {
+      Quickshell.execDetached([
+        "hyprctl",
+        "eval",
+        "return hl.dispatch(hl.dsp.window.close({ window = 'address:" + addresses[i] + "' }))"
+      ])
+    }
+    if (root.runtimeConfig.switchMode === "workspaces") return
     windowModel.remove(root.selectedIndex)
     root.selectedIndex = Math.min(root.selectedIndex, Math.max(0, windowModel.count - 1))
     root.positionSelection()
+  }
+
+  function notePopupCandidate(address) {
+    if (!root.validAddress(address)) return
+    var keys = Object.keys(root.pendingKills)
+    for (var k = 0; k < keys.length; k++)
+      root.pendingKills[keys[k]].popups.push(address)
+    for (var w = 0; w < root.lateDialogWatches.length; w++)
+      root.lateDialogWatches[w].popups.push(address)
+  }
+
+  function resolvePendingKills(rawText) {
+    var clients = []
+    try { clients = JSON.parse(String(rawText || "[]")) } catch (error) { return }
+
+    var now = Date.now()
+    // A watch is a close request for the one refused window: it resolves with
+    // the dialog if one opens, or ends when the window exits or time runs out.
+    var watches = []
+    for (var w = 0; w < root.lateDialogWatches.length; w++) {
+      var watch = root.lateDialogWatches[w]
+      var late = WindowModel.resolveKill(watch, clients, now)
+      if (late.popup) root.focusRefusal(root.workspaceTargetFor(late.window.workspace), late.window, late.popup)
+      else if (late.state === "pending") watches.push(watch)
+    }
+
+    var remaining = ({})
+    var keys = Object.keys(root.pendingKills)
+    for (var k = 0; k < keys.length; k++) {
+      var kill = root.pendingKills[keys[k]]
+      var result = WindowModel.resolveKill(kill, clients, now)
+      if (result.state === "pending") remaining[keys[k]] = kill
+      else if (result.state === "refused") {
+        root.revealRefusedWindow(kill, result.window, result.popup)
+        if (!result.popup)
+          watches.push({
+            addresses: [String(result.window.address)],
+            popups: [],
+            deadline: now + root.lateDialogTimeout
+          })
+      }
+    }
+    root.pendingKills = remaining
+    root.lateDialogWatches = watches
+  }
+
+  function workspaceTargetFor(workspace) {
+    var id = Number(workspace && workspace.id)
+    var name = String(workspace && workspace.name || "")
+    if (id > 0) return String(id)
+    return name.indexOf("special:") === 0 ? name : "name:" + name
+  }
+
+  function restoreTargetFor(kill) {
+    var record = kill.mode === "workspaces"
+      ? root.minimizedWorkspaces["workspace:" + String(kill.workspaceId)]
+      : root.minimizedClients[kill.address]
+    return record ? String(record.target || "") : ""
+  }
+
+  // A window that refused to close is usually waiting on the user (e.g. a
+  // "Save changes?" dialog). Leave it alive, close the switcher, and bring the
+  // window and its dialog into view so the user can answer.
+  function revealRefusedWindow(kill, window, popup) {
+    var target = kill.minimized ? root.restoreTargetFor(kill) : root.workspaceTargetFor(window.workspace)
+    if (kill.minimized) root.restoreSelected(kill, false)
+    root.focusRefusal(target, window, popup)
+  }
+
+  function focusRefusal(target, window, popup) {
+    var lines = []
+    if (popup) {
+      // The dialog may have opened on the active workspace instead of next to
+      // the window that owns it.
+      if (target && root.workspaceTargetFor(popup.workspace) !== target)
+        lines.push("hl.dispatch(hl.dsp.window.move({ workspace = " + root.luaQuote(target)
+          + ", window = 'address:" + popup.address + "', follow = false }))")
+      lines.push("hl.dispatch(hl.dsp.focus({ window = 'address:" + window.address + "' }))")
+    }
+    lines.push("return hl.dispatch(hl.dsp.focus({ window = 'address:" + (popup || window).address + "' }))")
+
+    if (root.opened) root.dismiss()
+    root.pendingRevealScript = lines.join("\n")
+    revealTimer.restart()
   }
 
   function isReleaseModifier(key) {
@@ -814,6 +949,35 @@ Item {
   }
 
   Timer {
+    id: killCheckTimer
+    interval: 200
+    repeat: true
+    onTriggered: {
+      if (Object.keys(root.pendingKills).length === 0 && root.lateDialogWatches.length === 0) {
+        stop()
+        return
+      }
+      if (!killCheck.running) killCheck.running = true
+    }
+  }
+
+  Process {
+    id: killCheck
+    command: ["hyprctl", "-j", "clients"]
+    stdout: StdioCollector {
+      onStreamFinished: root.resolvePendingKills(text)
+    }
+  }
+
+  Timer {
+    id: revealTimer
+    // Lets the switcher's exclusive focus go away, and any restore moves of a
+    // minimized window land, before focusing the refused window.
+    interval: 150
+    onTriggered: Quickshell.execDetached(["hyprctl", "eval", root.pendingRevealScript])
+  }
+
+  Timer {
     id: earlyCommitExpiry
     interval: 500
     onTriggered: root.earlyCommitArmed = false
@@ -904,8 +1068,12 @@ Item {
   Connections {
     target: Hyprland
     function onRawEvent(event) {
-      if (!root.opened) return
       var name = String(event && event.name || "")
+      // openwindow>>ADDRESS,WORKSPACE,CLASS,TITLE. Watched even while closed:
+      // a close confirmation dialog can show up after the switcher commits.
+      if (name === "openwindow")
+        root.notePopupCandidate("0x" + String(event.data || "").split(",")[0])
+      if (!root.opened) return
       if ([
         "openwindow", "closewindow", "windowtitle", "movewindow", "movewindowv2",
         "workspace", "createworkspace", "destroyworkspace", "moveworkspace", "focusedmon"
@@ -1243,7 +1411,7 @@ Item {
                 }
                 onClicked: function(mouse) {
                   root.select(windowCard.index)
-                  if (mouse.button === Qt.MiddleButton && root.runtimeConfig.switchMode !== "workspaces")
+                  if (mouse.button === Qt.MiddleButton)
                     root.closeSelected()
                   else
                     root.activateSelected()
@@ -1314,7 +1482,7 @@ Item {
               Layout.alignment: Qt.AlignVCenter
             }
             Text {
-              visible: !root.showingMinimized && root.runtimeConfig.switchMode !== "workspaces"
+              visible: !root.showingMinimized
               text: root.runtimeConfig.killKey.toUpperCase() + " / Del  Close"
               color: Color.menu.text
               opacity: 0.52

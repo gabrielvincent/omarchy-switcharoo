@@ -231,4 +231,52 @@ TestCase {
     compare(classResult.length, 2)
     compare(classResult[1].address, "0x4")
   }
+
+  function test_resolveKill() {
+    var kill = { addresses: ["0x1", "0x2"], popups: [], deadline: 1000 }
+
+    // Every window exited: the close succeeded.
+    compare(WindowModel.resolveKill(kill, [
+      { address: "0x9", mapped: true, pid: 9 }
+    ], 0).state, "closed")
+
+    // A window is still alive but may still be shutting down.
+    var survivor = [{ address: "0x2", mapped: true, pid: 20, focusHistoryID: 3 }]
+    compare(WindowModel.resolveKill(kill, survivor, 500).state, "pending")
+
+    // Past the deadline the surviving window is treated as refusing.
+    var timedOut = WindowModel.resolveKill(kill, survivor, 1000)
+    compare(timedOut.state, "refused")
+    compare(timedOut.window.address, "0x2")
+    compare(timedOut.popup, null)
+
+    // A dialog from the surviving window's process means an immediate refusal.
+    var withDialog = { addresses: ["0x1", "0x2"], popups: ["0x7", "0x8"], deadline: 1000 }
+    var dialogResult = WindowModel.resolveKill(withDialog, [
+      { address: "0x1", mapped: true, pid: 10, focusHistoryID: 1 },
+      { address: "0x2", mapped: true, pid: 20, focusHistoryID: 2 },
+      { address: "0x7", mapped: true, pid: 99 },
+      { address: "0x8", mapped: true, pid: 20 }
+    ], 0)
+    compare(dialogResult.state, "refused")
+    compare(dialogResult.window.address, "0x2")
+    compare(dialogResult.popup.address, "0x8")
+
+    // Windows opened by unrelated processes are not dialogs.
+    compare(WindowModel.resolveKill(withDialog, [
+      { address: "0x1", mapped: true, pid: 10 },
+      { address: "0x7", mapped: true, pid: 99 }
+    ], 0).state, "pending")
+
+    // Watching a refused window for a dialog that shows up after the deadline.
+    var watch = { addresses: ["0x2"], popups: ["0x5"], deadline: 6000 }
+    compare(WindowModel.resolveKill(watch, survivor, 2000).state, "pending")
+    var late = WindowModel.resolveKill(watch, survivor.concat([
+      { address: "0x5", mapped: true, pid: 20, workspace: { id: 2, name: "2" } }
+    ]), 2000)
+    compare(late.popup.address, "0x5")
+    compare(late.window.address, "0x2")
+    compare(WindowModel.resolveKill(watch, survivor, 6000).popup, null)
+    compare(WindowModel.resolveKill(watch, [], 2000).state, "closed")
+  }
 }

@@ -314,6 +314,55 @@ function workspaceLayout(clients, monitors, workspaceId, monitorId) {
     return out;
 }
 
+// Decides the outcome of a close request from a fresh client snapshot.
+// `kill.popups` holds windows opened after the request was sent; one owned by
+// the same process as a surviving window is treated as a confirmation dialog
+// (e.g. "Save changes?"), which means the close was refused. Without such a
+// dialog, surviving windows only count as refused once `kill.deadline` passes.
+function resolveKill(kill, clients, now) {
+    var source = Array.isArray(clients) ? clients : [];
+    var addresses = kill && Array.isArray(kill.addresses) ? kill.addresses : [];
+    var popupAddresses =
+        kill && Array.isArray(kill.popups) ? kill.popups : [];
+
+    var remaining = [];
+    var popups = [];
+    for (var i = 0; i < source.length; i++) {
+        var client = source[i];
+        if (!client || client.mapped === false) continue;
+        var address = String(client.address || "");
+        if (addresses.indexOf(address) !== -1) remaining.push(client);
+        else if (popupAddresses.indexOf(address) !== -1) popups.push(client);
+    }
+
+    if (remaining.length === 0)
+        return { state: "closed", window: null, popup: null };
+
+    remaining.sort(function (left, right) {
+        return focusRank(left) - focusRank(right);
+    });
+
+    // Prefer the most recently opened dialog.
+    for (var p = popupAddresses.length - 1; p >= 0; p--) {
+        for (var q = 0; q < popups.length; q++) {
+            if (String(popups[q].address) !== popupAddresses[p]) continue;
+            var pid = Number(popups[q].pid);
+            for (var r = 0; r < remaining.length; r++) {
+                if (pid > 0 && Number(remaining[r].pid) === pid)
+                    return {
+                        state: "refused",
+                        window: remaining[r],
+                        popup: popups[q],
+                    };
+            }
+        }
+    }
+
+    if (Number(now) < Number(kill.deadline))
+        return { state: "pending", window: null, popup: null };
+    return { state: "refused", window: remaining[0], popup: null };
+}
+
 function terminalCommandFromArgs(args) {
     var source = Array.isArray(args) ? args : [];
     for (var i = 0; i < source.length - 1; i++) {

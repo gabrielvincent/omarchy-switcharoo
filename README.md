@@ -9,7 +9,7 @@ A native [Omarchy](https://omarchy.org/) shell plugin for switching between Hypr
 - Most-recently-used window ordering from Hyprland's `focusHistoryID`
 - Vim navigation (`h`, `j`, `k`, `l`) and arrow-key navigation
 - Grid navigation with wrapping
-- Close the selected client with `q`, `Delete`, or middle-click
+- Close the selected client, or every client in the selected workspace, with `q`, `Delete`, or middle-click
 - Minimize clients or workspaces and restore them from a dedicated minimized view
 - Switch between windows or workspaces
 - Current-monitor, current-workspace, and same-class filters
@@ -104,7 +104,7 @@ Supported settings:
 | `maxVisibleRows` | `3` | Maximum rows before the grid scrolls. |
 | `filterBy` | `[]` | Any combination of `current_monitor`, `current_workspace`, and `same_class`; use `[]` for all windows. |
 | `excludeWorkspaces` | `[]` | Workspace-name regular expressions to exclude. In client mode, clients on matching workspaces are hidden; in workspace mode, matching workspaces are hidden.|
-| `killKey` | `"q"` | One-character key used to close the selected client. |
+| `killKey` | `"q"` | One-character key used to close the selected client, or all clients in the selected workspace in workspace mode. |
 | `showWorkspace` | `false` | Show the workspace name below each title in client mode and the workspace number/name label on workspace cards in workspace mode. `showWorkspaceNumbers` is accepted as an alias. |
 | `showSpecialWorkspaceBadge` | `true` | Show the `special` badge on special workspace cards in workspace mode. |
 | `dimBackdrop` | `false` | Dim the desktop behind the switcher. |
@@ -127,12 +127,12 @@ omarchy-shell shell summon io.github.gabrielvincent.switcharoo \
 | `j` / Down | Cell below |
 | `k` / Up | Cell above |
 | Enter / Space | Focus the selected client or workspace |
-| `q` / Delete | Close selected client (client mode only) |
+| `q` / Delete | Close the selected client, or every client in the selected workspace. If an app refuses to close (for example, it asks whether to save changes), it is left open, the switcher closes, and the app and its dialog are focused. |
 | `m` | Minimize the selected client or workspace; in minimized view, restore the selected item without leaving the switcher. Clients go to `special:switcharoo_minimized`; workspaces are parked in dedicated Switcharoo special workspaces. |
 | Shift + `m` | Toggle the minimized-only view. Enter / Space restores its selected client or workspace to its original workspace. |
 | Escape | Cancel the switcher, or return from minimized view to the normal view. |
 | Left click | Focus client |
-| Middle click | Close client |
+| Middle click | Close client or workspace clients |
 
 Minimized state is persisted in `$XDG_STATE_HOME/switcharoo-minimized.json` (normally `~/.local/state/switcharoo-minimized.json`). Entries for clients that no longer exist are automatically removed on the next Hyprland snapshot.
 
