@@ -45,6 +45,9 @@ Item {
   readonly property string minimizedStateDir: (Quickshell.env("XDG_STATE_HOME")
     || Quickshell.env("HOME") + "/.local/state")
   readonly property string minimizedStatePath: root.minimizedStateDir + "/switcharoo-minimized.json"
+  // Same location the shell itself reads; see shellEntry().
+  readonly property string shellConfigPath: Quickshell.env("HOME") + "/.config/omarchy/shell.json"
+  property var fileShellConfig: null
   property int queuedMoveDelta: 0
   property int selectedIndex: 0
   property var runtimeConfig: WindowModel.normalizedConfig({}, {})
@@ -82,13 +85,12 @@ Item {
   }
 
   function shellEntry() {
-    var config = root.shell && root.shell.shellConfig ? root.shell.shellConfig : null
-    var plugins = config && Array.isArray(config.plugins) ? config.plugins : []
-    var id = root.pluginId()
-    for (var i = 0; i < plugins.length; i++) {
-      if (plugins[i] && String(plugins[i].id || "") === id) return plugins[i]
-    }
-    return {}
+    // Omarchy 4.0.6 hands third-party plugins a scoped shell API without
+    // shellConfig, so read our inline settings from shell.json directly.
+    // Older shells still expose the full config and are used when present.
+    var config = root.shell && root.shell.shellConfig
+      ? root.shell.shellConfig : root.fileShellConfig
+    return WindowModel.pluginEntry(config, root.pluginId())
   }
 
   function parsePayload(payloadJson) {
@@ -912,6 +914,16 @@ Item {
     interval: 100
     repeat: false
     onTriggered: root.saveMinimizedState()
+  }
+
+  FileView {
+    id: shellConfigFile
+    path: root.shellConfigPath
+    watchChanges: true
+    printErrors: false
+    onLoaded: root.fileShellConfig = WindowModel.parseShellConfig(text())
+    onLoadFailed: root.fileShellConfig = null
+    onFileChanged: reload()
   }
 
   FileView {

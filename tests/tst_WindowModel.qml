@@ -23,6 +23,23 @@ TestCase {
     compare(WindowModel.nextGridIndex(3, "down", 5, 2, false), 4)
   }
 
+  function test_shellConfigEntry() {
+    var config = WindowModel.parseShellConfig(JSON.stringify({
+      version: 1,
+      plugins: [
+        { id: "other.plugin", switchMode: "clients" },
+        { id: "io.github.gabrielvincent.switcharoo", switchMode: "workspaces" }
+      ]
+    }))
+
+    compare(WindowModel.pluginEntry(config, "io.github.gabrielvincent.switcharoo").switchMode, "workspaces")
+    compare(Object.keys(WindowModel.pluginEntry(config, "missing.plugin")).length, 0)
+    compare(Object.keys(WindowModel.pluginEntry(null, "missing.plugin")).length, 0)
+    compare(WindowModel.parseShellConfig(JSON.stringify({ plugins: [] })), null)
+    compare(WindowModel.parseShellConfig("{ not json"), null)
+    compare(WindowModel.parseShellConfig(""), null)
+  }
+
   function test_configNormalization() {
     var config = WindowModel.normalizedConfig({
       maxItemsPerRow: 7,

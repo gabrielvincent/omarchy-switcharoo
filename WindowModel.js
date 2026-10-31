@@ -23,6 +23,27 @@ function normalizeWorkspacePatterns(value) {
     return patterns;
 }
 
+// Mirrors the shell's own acceptance rule: anything other than a version 1
+// object is ignored, just as the shell falls back to its defaults.
+function parseShellConfig(text) {
+    if (!text || !String(text).trim()) return null;
+    try {
+        var parsed = JSON.parse(text);
+        return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+            && parsed.version === 1 ? parsed : null;
+    } catch (error) {
+        return null;
+    }
+}
+
+function pluginEntry(config, id) {
+    var plugins = config && Array.isArray(config.plugins) ? config.plugins : [];
+    for (var i = 0; i < plugins.length; i++) {
+        if (plugins[i] && String(plugins[i].id || "") === id) return plugins[i];
+    }
+    return {};
+}
+
 function normalizedConfig(entry, payload) {
     var stored = entry && typeof entry === "object" ? entry : {};
     var request = payload && typeof payload === "object" ? payload : {};
